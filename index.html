@@ -34,13 +34,13 @@
     <style>
         body { background-color: #fff1f2; font-family: 'Segoe UI', sans-serif; }
         .card-value { font-weight: 800; letter-spacing: -0.5px; }
-        .hidden-elm { display: none; }
+        .hidden-elm { display: none !important; }
         .tab-active { border-bottom: 2px solid white; opacity: 1; font-weight: bold; }
         .tab-inactive { opacity: 0.7; }
         
         @media print {
             body { background-color: white; }
-            header, .no-print, #dashboardView, #statsView, #formIncome, #formExpense { display: none !important; }
+            header, .no-print, #dashboardView, #statsView, #formIncome, #formExpense, #loginOverlay { display: none !important; }
             #reportView { display: block !important; }
             .print-only-header { display: block !important; }
         }
@@ -49,16 +49,34 @@
 </head>
 <body class="pb-24">
 
-    <div id="connectionStatus" class="bg-yellow-500 text-white text-xs text-center p-1 font-bold">
-        Conectando ao Firebase...
+    <div id="loginOverlay" class="fixed inset-0 bg-brand-900 z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-8 w-full max-w-sm text-center">
+            <div class="w-16 h-16 bg-brand-100 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                <i class="fas fa-lock"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-1">Divine Pudim</h2>
+            <p class="text-gray-500 text-sm mb-6">Acesso Restrito</p>
+            
+            <input type="email" id="loginEmail" placeholder="E-mail" class="w-full p-3 border border-gray-300 rounded-lg mb-3 focus:outline-none focus:border-brand-500" value="beatri_kally@hotmail.com">
+            <input type="password" id="loginPass" placeholder="Senha" class="w-full p-3 border border-gray-300 rounded-lg mb-6 focus:outline-none focus:border-brand-500">
+            
+            <button onclick="app.login()" id="btnLogin" class="w-full bg-brand-600 text-white font-bold py-3 rounded-lg hover:bg-brand-700 transition shadow-lg">
+                ENTRAR
+            </button>
+            <p id="loginError" class="text-red-500 text-xs mt-4 hidden-elm font-bold"></p>
+        </div>
+    </div>
+
+    <div id="connectionStatus" class="hidden-elm bg-green-600 text-white text-xs text-center p-1 font-bold">
+        Online
     </div>
 
     <header class="bg-brand-700 text-white p-4 shadow-lg sticky top-0 z-50">
         <div class="flex justify-between items-center mb-3">
             <h1 class="text-xl font-bold"><i class="fas fa-certificate mr-2"></i>Divine Pudim</h1>
             <div class="space-x-2">
-                <button onclick="app.downloadBackup()" class="bg-brand-900 hover:bg-black text-[10px] px-3 py-1 rounded transition">
-                    <i class="fas fa-download"></i> Backup JSON
+                <button onclick="app.logout()" class="bg-red-800 hover:bg-red-900 text-[10px] px-3 py-1 rounded transition">
+                    <i class="fas fa-sign-out-alt"></i> Sair
                 </button>
             </div>
         </div>
@@ -348,18 +366,17 @@
 
     <script>
         // ================= CONFIGURAÇÃO FIREBASE =================
-        // DADOS RETIRADOS DA SUA IMAGEM:
         const firebaseConfig = {
             apiKey: "AIzaSyC81RlLincU6aS-fKHieRPqu6SWFy0ejUg",
             authDomain: "divine-financeiro.firebaseapp.com",
             databaseURL: "https://divine-financeiro-default-rtdb.firebaseio.com",
             projectId: "divino-financeiro",
-            storageBucket: "divino-financeiro.appspot.com", // Padrão inferido
-            messagingSenderId: "365313985554", // Padrão inferido se necessário
-            appId: "1:365313985554:web:6584c3c33324546a1e38d7" // Padrão inferido se necessário
+            storageBucket: "divino-financeiro.appspot.com", 
+            messagingSenderId: "365313985554", 
+            appId: "1:365313985554:web:6584c3c33324546a1e38d7" 
         };
 
-        // 2. Inicialização do Firebase
+        // Inicialização do Firebase
         try {
             firebase.initializeApp(firebaseConfig);
         } catch(e) {
@@ -369,10 +386,6 @@
         const database = firebase.database();
         const dbRef = database.ref('divine_pudim_v4_prod'); 
         const auth = firebase.auth();
-
-        // 3. Credenciais de Acesso (Login Automático)
-        const APP_USER = "beatriz_kally@hotmail.com";
-        const APP_PASS = "Divine1810#";
 
         // ================= STATE =================
         const db = {
@@ -389,33 +402,66 @@
                 document.getElementById('expDate').value = today;
                 document.getElementById('reportMonthSelector').value = today.slice(0, 7);
 
-                // Tenta autenticar antes de carregar dados
-                app.authenticateAndLoad();
-
-                // View inicial vazia até carregar
+                // Configura o ouvinte de autenticação
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        // Se já estiver logado (sessão salva no navegador)
+                        document.getElementById('loginOverlay').classList.add('hidden-elm');
+                        document.getElementById('connectionStatus').classList.remove('hidden-elm');
+                        app.loadData();
+                    } else {
+                        // Se não estiver logado, garante que a tela de login apareça
+                        document.getElementById('loginOverlay').classList.remove('hidden-elm');
+                        document.getElementById('connectionStatus').classList.add('hidden-elm');
+                    }
+                });
+                
+                // View inicial vazia
                 view.render();
                 view.renderStats();
             },
 
-            authenticateAndLoad: () => {
-                document.getElementById('connectionStatus').innerText = "Autenticando...";
-                
-                auth.signInWithEmailAndPassword(APP_USER, APP_PASS)
-                    .then((userCredential) => {
-                        // Login sucesso
-                        document.getElementById('connectionStatus').innerText = "Online • Sincronizado";
-                        document.getElementById('connectionStatus').classList.replace('bg-yellow-500', 'bg-green-600');
-                        
-                        // Inicia escuta do banco de dados
-                        app.loadData();
+            login: () => {
+                const email = document.getElementById('loginEmail').value;
+                const pass = document.getElementById('loginPass').value;
+                const btn = document.getElementById('btnLogin');
+                const err = document.getElementById('loginError');
+
+                if(!email || !pass) {
+                    err.innerText = "Preencha e-mail e senha.";
+                    err.classList.remove('hidden-elm');
+                    return;
+                }
+
+                btn.innerText = "Entrando...";
+                btn.disabled = true;
+                err.classList.add('hidden-elm');
+
+                auth.signInWithEmailAndPassword(email, pass)
+                    .then(() => {
+                        // O onAuthStateChanged vai lidar com a tela
+                        btn.innerText = "ENTRAR";
+                        btn.disabled = false;
                     })
                     .catch((error) => {
-                        // Erro no login
-                        console.error("Erro Login:", error);
-                        document.getElementById('connectionStatus').innerText = "Erro de Login! Verifique console.";
-                        document.getElementById('connectionStatus').classList.replace('bg-yellow-500', 'bg-red-600');
-                        alert("Erro ao conectar no sistema: " + error.message);
+                        console.error(error);
+                        let msg = "Erro ao entrar.";
+                        if(error.code === 'auth/invalid-login-credentials' || error.code === 'auth/wrong-password') msg = "E-mail ou senha incorretos.";
+                        if(error.code === 'auth/user-not-found') msg = "Usuário não encontrado.";
+                        
+                        err.innerText = msg;
+                        err.classList.remove('hidden-elm');
+                        btn.innerText = "ENTRAR";
+                        btn.disabled = false;
                     });
+            },
+
+            logout: () => {
+                if(confirm("Sair do sistema?")) {
+                    auth.signOut().then(() => {
+                        window.location.reload();
+                    });
+                }
             },
 
             populateSettings: () => {
@@ -436,26 +482,17 @@
             },
 
             saveData: () => {
-                // SALVA NO FIREBASE EM VEZ DO LOCALSTORAGE
-                document.getElementById('connectionStatus').innerText = "Salvando...";
-                
                 dbRef.set(db)
-                    .then(() => {
-                        document.getElementById('connectionStatus').innerText = "Online • Sincronizado";
-                    })
                     .catch((error) => {
                         alert("Erro ao salvar: " + error.message);
-                        document.getElementById('connectionStatus').innerText = "Erro ao salvar!";
                     });
             },
 
             loadData: () => {
-                // ESCUTA MUDANÇAS EM TEMPO REAL
                 dbRef.on('value', (snapshot) => {
                     const data = snapshot.val();
                     if (data) {
                         db.transactions = data.transactions || [];
-                        // Mescla settings para garantir que novos campos não quebrem
                         if (data.settings) {
                             db.settings = { ...db.settings, ...data.settings };
                         }
@@ -464,7 +501,6 @@
                         view.render();
                         view.renderStats();
                     } else {
-                        // Banco vazio (primeiro uso), inicia padrão
                         app.populateSettings();
                         view.render();
                     }
@@ -804,7 +840,7 @@
                 document.getElementById('formExpense').classList.add('hidden-elm');
                 app.editingId = null;
                 document.querySelectorAll('input').forEach(i => {
-                    if(!i.id.includes('config') && i.type !== 'file' && i.type !== 'date' && i.type !== 'checkbox') i.value = '';
+                    if(!i.id.includes('config') && !i.id.includes('login') && i.type !== 'file' && i.type !== 'date' && i.type !== 'checkbox') i.value = '';
                     if(i.type === 'checkbox') i.checked = false;
                 });
             },
@@ -985,4 +1021,3 @@
     </script>
 </body>
 </html>
-
