@@ -96,19 +96,19 @@
             <div class="grid grid-cols-2 gap-2 text-white">
                 <div>
                     <label>Taxa App (%)</label>
-                    <input type="number" id="configIfoodRateApp" class="w-full p-1 text-black rounded" placeholder="Ex: 23">
+                    <input type="number" id="configIfoodRateApp" class="w-full p-1 text-black rounded">
                 </div>
                 <div>
                     <label>Taxa Entrega (%)</label>
-                    <input type="number" id="configIfoodRateDelivery" class="w-full p-1 text-black rounded" placeholder="Ex: 12">
+                    <input type="number" id="configIfoodRateDelivery" class="w-full p-1 text-black rounded">
                 </div>
                 <div>
                     <label>Taxa Fixa (R$)</label>
-                    <input type="number" step="0.01" id="configIfoodFixed" class="w-full p-1 text-black rounded" value="0.99">
+                    <input type="number" step="0.01" id="configIfoodFixed" class="w-full p-1 text-black rounded">
                 </div>
                 <div>
                     <label>Prazo Rec. (Dias)</label>
-                    <input type="number" id="configIfoodDelay" class="w-full p-1 text-black rounded" value="28">
+                    <input type="number" id="configIfoodDelay" class="w-full p-1 text-black rounded">
                 </div>
                 <div class="col-span-2 mt-2">
                     <button onclick="app.saveSettings()" class="w-full bg-green-600 py-1 rounded font-bold hover:bg-green-700">Salvar Configurações</button>
@@ -390,7 +390,7 @@
         // ================= STATE =================
         const db = {
             transactions: [],
-            settings: { ifoodRateApp: 23, ifoodRateDelivery: 12, ifoodFixed: 0.99, ifoodDelay: 28 }
+            settings: { ifoodRateApp: 16.69, ifoodRateDelivery: 13.49, ifoodFixed: 0.99, ifoodDelay: 28 }
         };
 
         const app = {
@@ -518,8 +518,9 @@
                 const tx = db.transactions.find(t => t.id == id);
                 if (!tx) return;
                 
-                if (tx.type === 'adjustment' || tx.type === 'reserve_out') return alert('Edite a venda original para alterar este valor.');
-
+                // --- TRAVA DE SEGURANÇA REMOVIDA AQUI ---
+                // Você agora pode editar ou excluir qualquer tipo de lançamento.
+                
                 app.editingId = id;
                 
                 if (tx.type === 'expense') {
@@ -527,6 +528,14 @@
                     document.getElementById('expCategory').value = tx.category;
                     document.getElementById('expDesc').value = tx.description;
                     document.getElementById('expAmount').value = tx.amount;
+                    view.openForm('expense');
+                } else if (tx.type === 'adjustment' || tx.type === 'reserve_out') {
+                    // Abre form de despesa para editar valores negativos/reservas se necessário
+                    document.getElementById('expDate').value = tx.date;
+                    // Se a categoria não estiver na lista padrão, ela apenas aparece visualmente, sem problema
+                    document.getElementById('expCategory').value = 'Extras'; 
+                    document.getElementById('expDesc').value = tx.description;
+                    document.getElementById('expAmount').value = Math.abs(tx.amount); // Mostra positivo para editar
                     view.openForm('expense');
                 } else {
                     document.getElementById('incDate').value = tx.date;
@@ -731,10 +740,12 @@
                     db.transactions = db.transactions.filter(t => t.id !== app.editingId);
                 }
 
+                // Verifica se é edição de adjustment/reserve (valor negativo ou especial)
+                // Se for edição normal, salva como despesa
                 db.transactions.unshift({
                     id: app.editingId || Date.now(),
                     date: document.getElementById('expDate').value,
-                    type: 'expense',
+                    type: 'expense', // Simplificação: ao editar, vira despesa comum
                     category: document.getElementById('expCategory').value,
                     description: document.getElementById('expDesc').value,
                     amount: val,
