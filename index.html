@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Divine Pudim - Sistema v2</title>
+    <title>Divine Pudim - Sistema Online</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
     <script>
         tailwind.config = {
             theme: {
@@ -45,17 +49,17 @@
 </head>
 <body class="pb-24">
 
+    <div id="connectionStatus" class="bg-yellow-500 text-white text-xs text-center p-1 font-bold">
+        Conectando ao Firebase...
+    </div>
+
     <header class="bg-brand-700 text-white p-4 shadow-lg sticky top-0 z-50">
         <div class="flex justify-between items-center mb-3">
             <h1 class="text-xl font-bold"><i class="fas fa-certificate mr-2"></i>Divine Pudim</h1>
             <div class="space-x-2">
                 <button onclick="app.downloadBackup()" class="bg-brand-900 hover:bg-black text-[10px] px-3 py-1 rounded transition">
-                    <i class="fas fa-download"></i> Backup
+                    <i class="fas fa-download"></i> Backup JSON
                 </button>
-                <label for="restoreFile" class="bg-blue-600 hover:bg-blue-700 text-[10px] px-3 py-1 rounded transition cursor-pointer">
-                    <i class="fas fa-upload"></i> Restaurar
-                </label>
-                <input type="file" id="restoreFile" accept=".json" class="hidden" onchange="app.restoreBackup(this)">
             </div>
         </div>
 
@@ -343,6 +347,43 @@
     </main>
 
     <script>
+        // ================= CONFIGURAÇÃO FIREBASE =================
+        
+        // 1. SUBSTITUA ISSO AQUI PELO CÓDIGO DO FIREBASE CONSOLE:
+      // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyC81RlLincU6aS-fKHieRPqu6SWFy0ejUg",
+  authDomain: "divine-financeiro.firebaseapp.com",
+  databaseURL: "https://divine-financeiro-default-rtdb.firebaseio.com",
+  projectId: "divine-financeiro",
+  storageBucket: "divine-financeiro.firebasestorage.app",
+  messagingSenderId: "580446200879",
+  appId: "1:580446200879:web:52d956a5dfc8fdc6f3d2da"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+        // 2. Inicialização do Firebase
+        try {
+            firebase.initializeApp(firebaseConfig);
+        } catch(e) {
+            console.error("Erro ao iniciar Firebase. Você preencheu a config?", e);
+            alert("Erro: Configure o Firebase no código HTML!");
+        }
+
+        const database = firebase.database();
+        const dbRef = database.ref('divine_pudim_v4_prod'); // Caminho no banco de dados
+        const auth = firebase.auth();
+
+        // 3. Credenciais de Acesso (Login Automático)
+        const APP_USER = "beatri_kally@hotmail.com";
+        const APP_PASS = "Divine1810#";
+
         // ================= STATE =================
         const db = {
             transactions: [],
@@ -358,10 +399,33 @@
                 document.getElementById('expDate').value = today;
                 document.getElementById('reportMonthSelector').value = today.slice(0, 7);
 
-                app.loadData();
-                app.populateSettings();
+                // Tenta autenticar antes de carregar dados
+                app.authenticateAndLoad();
+
+                // View inicial vazia até carregar
                 view.render();
                 view.renderStats();
+            },
+
+            authenticateAndLoad: () => {
+                document.getElementById('connectionStatus').innerText = "Autenticando...";
+                
+                auth.signInWithEmailAndPassword(APP_USER, APP_PASS)
+                    .then((userCredential) => {
+                        // Login sucesso
+                        document.getElementById('connectionStatus').innerText = "Online • Sincronizado";
+                        document.getElementById('connectionStatus').classList.replace('bg-yellow-500', 'bg-green-600');
+                        
+                        // Inicia escuta do banco de dados
+                        app.loadData();
+                    })
+                    .catch((error) => {
+                        // Erro no login
+                        console.error("Erro Login:", error);
+                        document.getElementById('connectionStatus').innerText = "Erro de Login! Verifique console.";
+                        document.getElementById('connectionStatus').classList.replace('bg-yellow-500', 'bg-red-600');
+                        alert("Erro ao conectar no sistema: " + error.message);
+                    });
             },
 
             populateSettings: () => {
@@ -382,18 +446,40 @@
             },
 
             saveData: () => {
-                localStorage.setItem('divinePudimDB_v4', JSON.stringify(db));
-                view.render();
-                view.renderStats();
+                // SALVA NO FIREBASE EM VEZ DO LOCALSTORAGE
+                document.getElementById('connectionStatus').innerText = "Salvando...";
+                
+                dbRef.set(db)
+                    .then(() => {
+                        document.getElementById('connectionStatus').innerText = "Online • Sincronizado";
+                        // A renderização acontece automaticamente pelo listener 'on value' abaixo
+                    })
+                    .catch((error) => {
+                        alert("Erro ao salvar: " + error.message);
+                        document.getElementById('connectionStatus').innerText = "Erro ao salvar!";
+                    });
             },
 
             loadData: () => {
-                const data = localStorage.getItem('divinePudimDB_v4');
-                if (data) {
-                    const parsed = JSON.parse(data);
-                    db.transactions = parsed.transactions || [];
-                    db.settings = { ...db.settings, ...parsed.settings };
-                }
+                // ESCUTA MUDANÇAS EM TEMPO REAL
+                dbRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        db.transactions = data.transactions || [];
+                        // Mescla settings para garantir que novos campos não quebrem
+                        if (data.settings) {
+                            db.settings = { ...db.settings, ...data.settings };
+                        }
+                        
+                        app.populateSettings();
+                        view.render();
+                        view.renderStats();
+                    } else {
+                        // Banco vazio (primeiro uso), inicia padrão
+                        app.populateSettings();
+                        view.render();
+                    }
+                });
             },
 
             // --- FLUXO DE CRIAÇÃO E EDIÇÃO ---
@@ -407,7 +493,6 @@
                 const tx = db.transactions.find(t => t.id == id);
                 if (!tx) return;
                 
-                // Impede edição de transações automáticas (Taxas e Capital Giro)
                 if (tx.type === 'adjustment' || tx.type === 'reserve_out') return alert('Edite a venda original para alterar este valor.');
 
                 app.editingId = id;
@@ -429,9 +514,6 @@
                     document.getElementById('incType').value = derivedType;
                     view.handleIncomeTypeChange();
 
-                    // Se foi venda Bárbara (detectado pela flag ou lógica futura, aqui simplificado)
-                    // Como não salvei flag explicita antes, vamos assumir que não é edição de Barbara antiga por enquanto
-                    // Mas para segurança:
                     document.getElementById('incIsBarbara').checked = false;
 
                     if (derivedType === 'ifood') {
@@ -459,12 +541,8 @@
                 
                 if (!dateVal) return alert('Data obrigatória');
 
-                // Remover anterior se for edição
                 if (app.editingId) {
                     db.transactions = db.transactions.filter(t => t.id !== app.editingId);
-                    // NOTA: Em app simples, ao editar a venda, as taxas e reservas geradas NÃO são deletadas automaticamente
-                    // O ideal seria buscar por parentId, mas para manter simples, vou deixar assim.
-                    // O usuário deve excluir a venda errada e lançar de novo para corrigir 100%.
                 }
 
                 // === LÓGICA DE VENDA BÁRBARA ===
@@ -472,7 +550,6 @@
                     const val = parseFloat(document.getElementById('incAmount').value);
                     if (isNaN(val)) return alert('Valor inválido');
 
-                    // 1. Cria a Venda (Entrada)
                     const incId = app.editingId || Date.now();
                     db.transactions.unshift({
                         id: incId,
@@ -487,7 +564,6 @@
                         dueDate: dateVal
                     });
 
-                    // 2. Cria a Despesa Imediata (Saída)
                     db.transactions.unshift({
                         id: Date.now() + 999,
                         date: dateVal,
@@ -502,11 +578,11 @@
 
                     app.saveData();
                     view.closeForms();
-                    return; // Encerra aqui, não aplica 7%
+                    return;
                 }
 
                 // === LÓGICA PADRÃO (COM 7% DE RESERVA) ===
-                let netForReserve = 0; // Valor base para calcular os 7%
+                let netForReserve = 0; 
 
                 if (type === 'ifood') {
                     const gross = parseFloat(document.getElementById('incAmount').value);
@@ -516,10 +592,9 @@
                     const fixedFee = db.settings.ifoodFixed;
                     
                     if (origin === 'app') {
-                        // App: Líquido Futuro
                         const rate = db.settings.ifoodRateApp / 100;
                         const net = gross - (gross * rate) - fixedFee;
-                        netForReserve = net; // Base para reserva
+                        netForReserve = net;
 
                         const futureDate = new Date(dateVal);
                         futureDate.setDate(futureDate.getDate() + db.settings.ifoodDelay);
@@ -538,12 +613,10 @@
                             dueDate: futureDate.toISOString().split('T')[0]
                         });
                     } else {
-                        // Entrega: Bruto Agora + Taxa Negativa
                         const rate = db.settings.ifoodRateDelivery / 100;
                         const fee = (gross * rate) + fixedFee;
-                        netForReserve = gross - fee; // Base para reserva (Líquido real)
+                        netForReserve = gross - fee; 
 
-                        // 1. Principal
                         db.transactions.unshift({
                             id: app.editingId || Date.now() + '1',
                             date: dateVal,
@@ -557,7 +630,6 @@
                             dueDate: dateVal
                         });
 
-                        // 2. Taxa
                         if (!app.editingId) {
                             db.transactions.unshift({
                                 id: Date.now() + '2',
@@ -566,7 +638,7 @@
                                 category: 'Taxa iFood',
                                 description: 'Taxa iFood s/ ' + desc,
                                 amount: -fee,
-                                status: 'pending', // Consideramos pending para abater do "A Receber" ou saldo futuro
+                                status: 'pending',
                                 target: 'ifood', 
                                 method: 'Auto',
                                 dueDate: null
@@ -590,7 +662,6 @@
                         dueDate: dateVal
                     });
                 } else {
-                    // Direta
                     const val = parseFloat(document.getElementById('incAmount').value);
                     netForReserve = val;
                     if (isNaN(val)) return alert('Valor inválido');
@@ -608,16 +679,15 @@
                     });
                 }
 
-                // === APLICAÇÃO AUTOMÁTICA DOS 7% (CAPITAL DE GIRO) ===
                 if (!app.editingId && netForReserve > 0) {
                     const reserveAmount = netForReserve * 0.07;
                     db.transactions.unshift({
-                        id: Date.now() + '9', // ID único
+                        id: Date.now() + '9', 
                         date: dateVal,
-                        type: 'reserve_out', // Tipo especial: Saída para Reserva
+                        type: 'reserve_out', 
                         category: 'Capital de Giro',
                         description: 'Retenção 7% (Cap. Giro)',
-                        amount: reserveAmount, // Valor positivo, mas a lógica de saldo irá subtrair
+                        amount: reserveAmount, 
                         status: 'paid',
                         method: 'Auto',
                         dueDate: dateVal
@@ -696,22 +766,6 @@
                 node.href = dataStr;
                 node.download = `divine_backup_${new Date().toISOString().slice(0,10)}.json`;
                 node.click();
-            },
-
-            restoreBackup: (input) => {
-                const file = input.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const parsed = JSON.parse(e.target.result);
-                        db.transactions = parsed.transactions || [];
-                        db.settings = parsed.settings;
-                        app.saveData();
-                        alert('Restaurado!');
-                    } catch(e) { alert('Erro no arquivo'); }
-                };
-                reader.readAsText(file);
             }
         };
 
@@ -823,15 +877,12 @@
                         if (t.type === 'income') balance += t.amount;
                         else if (t.type === 'expense') balance -= t.amount;
                         else if (t.type === 'reserve_out') {
-                            // Sai do saldo disponível
                             balance -= t.amount; 
-                            // Vai para o saldo de reserva
                             reserve += t.amount;
                         }
                     } else if (t.status === 'pending') {
-                        // Adjustment negativo entra aqui subtraindo
                         if (t.type !== 'adjustment') pending += t.amount;
-                        else pending += t.amount; // Adjustment is negative
+                        else pending += t.amount; 
                     }
                 });
 
@@ -839,7 +890,6 @@
                 document.getElementById('dashReceivableTotal').innerText = view.formatMoney(pending);
                 document.getElementById('dashReserve').innerText = view.formatMoney(reserve);
 
-                // Lista
                 const list = document.getElementById('transactionList');
                 list.innerHTML = '';
                 
@@ -898,17 +948,10 @@
                     if(t.type === 'income') totIn += t.amount;
                     if(t.type === 'expense' || t.type === 'reserve_out') {
                         totOut += t.amount;
-                        
-                        // Agrupamento por Categoria (Apenas Saídas e Reservas)
                         if(!categoryMap[t.category]) categoryMap[t.category] = 0;
                         categoryMap[t.category] += t.amount;
                     }
                     
-                    // Não mostra adjustments automáticos na tabela detalhada para não poluir, 
-                    // ou mostra se quiser auditoria. Vamos ocultar adjustments (taxas) da tabela,
-                    // mas eles já foram deduzidos no cálculo de entrada se feitos corretamente, 
-                    // ou são apenas controle. No código atual, taxa ifood é 'adjustment'.
-                    // Vamos exibir tudo exceto adjustment puramente técnico se houver.
                     if(t.type !== 'adjustment') {
                         tbody.innerHTML += `
                             <tr>
@@ -925,18 +968,15 @@
                 document.getElementById('repTotalOut').innerText = view.formatMoney(totOut);
                 document.getElementById('repResult').innerText = view.formatMoney(totIn - totOut);
 
-                // Renderiza Resumo de Despesas
                 const summaryContainer = document.getElementById('expenseSummaryContainer');
                 summaryContainer.innerHTML = '';
                 
-                // Ordenar categorias por valor (maior gasto primeiro)
                 const sortedCats = Object.entries(categoryMap).sort((a,b) => b[1] - a[1]);
                 
                 if (sortedCats.length === 0) {
                     summaryContainer.innerHTML = '<p class="text-gray-400 italic">Nenhuma despesa no período.</p>';
                 } else {
                     sortedCats.forEach(([cat, val]) => {
-                        // Destaque visual para Bárbara se quiser
                         const isBarb = cat === 'Bárbara';
                         const bgClass = isBarb ? 'bg-pink-100 border-pink-200' : 'bg-gray-50 border-gray-200';
                         const textClass = isBarb ? 'text-pink-800' : 'text-gray-700';
