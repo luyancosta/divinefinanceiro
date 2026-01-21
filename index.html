@@ -348,40 +348,26 @@
 
     <script>
         // ================= CONFIGURAÇÃO FIREBASE =================
-        
-        // 1. SUBSTITUA ISSO AQUI PELO CÓDIGO DO FIREBASE CONSOLE:
-    <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
+        // DADOS RETIRADOS DA SUA IMAGEM:
+        const firebaseConfig = {
+            apiKey: "AIzaSyC81RlLincU6aS-fKHieRPqu6SWFy0ejUg",
+            authDomain: "divine-financeiro.firebaseapp.com",
+            databaseURL: "https://divine-financeiro-default-rtdb.firebaseio.com",
+            projectId: "divino-financeiro",
+            storageBucket: "divino-financeiro.appspot.com", // Padrão inferido
+            messagingSenderId: "365313985554", // Padrão inferido se necessário
+            appId: "1:365313985554:web:6584c3c33324546a1e38d7" // Padrão inferido se necessário
+        };
 
-  // Your web app's Firebase configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyC81RlLincU6aS-fKHieRPqu6SWFy0ejUg",
-    authDomain: "divine-financeiro.firebaseapp.com",
-    databaseURL: "https://divine-financeiro-default-rtdb.firebaseio.com",
-    projectId: "divine-financeiro",
-    storageBucket: "divine-financeiro.firebasestorage.app",
-    messagingSenderId: "580446200879",
-    appId: "1:580446200879:web:52d956a5dfc8fdc6f3d2da"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-</script>
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
         // 2. Inicialização do Firebase
         try {
             firebase.initializeApp(firebaseConfig);
         } catch(e) {
-            console.error("Erro ao iniciar Firebase. Você preencheu a config?", e);
-            alert("Erro: Configure o Firebase no código HTML!");
+            console.error("Erro ao iniciar Firebase", e);
         }
 
         const database = firebase.database();
-        const dbRef = database.ref('divine_pudim_v4_prod'); // Caminho no banco de dados
+        const dbRef = database.ref('divine_pudim_v4_prod'); 
         const auth = firebase.auth();
 
         // 3. Credenciais de Acesso (Login Automático)
@@ -456,7 +442,6 @@ const app = initializeApp(firebaseConfig);
                 dbRef.set(db)
                     .then(() => {
                         document.getElementById('connectionStatus').innerText = "Online • Sincronizado";
-                        // A renderização acontece automaticamente pelo listener 'on value' abaixo
                     })
                     .catch((error) => {
                         alert("Erro ao salvar: " + error.message);
@@ -1000,4 +985,3 @@ const app = initializeApp(firebaseConfig);
     </script>
 </body>
 </html>
-
