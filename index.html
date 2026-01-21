@@ -390,6 +390,7 @@
         // ================= STATE =================
         const db = {
             transactions: [],
+            // TAXAS ATUALIZADAS CONFORME IMAGEM
             settings: { ifoodRateApp: 16.69, ifoodRateDelivery: 13.49, ifoodFixed: 0.99, ifoodDelay: 28 }
         };
 
@@ -515,11 +516,8 @@
             },
 
             startEditTransaction: (id) => {
-                const tx = db.transactions.find(t => t.id == id);
+                const tx = db.transactions.find(t => t.id == id); // == Aceita string e numero
                 if (!tx) return;
-                
-                // --- TRAVA DE SEGURANÇA REMOVIDA AQUI ---
-                // Você agora pode editar ou excluir qualquer tipo de lançamento.
                 
                 app.editingId = id;
                 
@@ -530,12 +528,12 @@
                     document.getElementById('expAmount').value = tx.amount;
                     view.openForm('expense');
                 } else if (tx.type === 'adjustment' || tx.type === 'reserve_out') {
-                    // Abre form de despesa para editar valores negativos/reservas se necessário
+                    // Edição de itens automáticos
                     document.getElementById('expDate').value = tx.date;
-                    // Se a categoria não estiver na lista padrão, ela apenas aparece visualmente, sem problema
                     document.getElementById('expCategory').value = 'Extras'; 
                     document.getElementById('expDesc').value = tx.description;
-                    document.getElementById('expAmount').value = Math.abs(tx.amount); // Mostra positivo para editar
+                    // Mostra sempre positivo para editar
+                    document.getElementById('expAmount').value = Math.abs(tx.amount); 
                     view.openForm('expense');
                 } else {
                     document.getElementById('incDate').value = tx.date;
@@ -576,7 +574,7 @@
                 if (!dateVal) return alert('Data obrigatória');
 
                 if (app.editingId) {
-                    db.transactions = db.transactions.filter(t => t.id !== app.editingId);
+                    db.transactions = db.transactions.filter(t => t.id != app.editingId); // Correção !=
                 }
 
                 // === LÓGICA DE VENDA BÁRBARA ===
@@ -736,21 +734,38 @@
                 const val = parseFloat(document.getElementById('expAmount').value);
                 if (isNaN(val)) return alert('Valor inválido');
 
+                let type = 'expense';
+                let status = 'paid';
+                let method = 'Saída Caixa';
+                let category = document.getElementById('expCategory').value;
+
                 if (app.editingId) {
-                    db.transactions = db.transactions.filter(t => t.id !== app.editingId);
+                    // Tenta manter o tipo original se for especial (Retenção ou Taxa)
+                    const original = db.transactions.find(t => t.id == app.editingId);
+                    if (original) {
+                         type = original.type;
+                         status = original.status;
+                         // Mantém o método original se for automático
+                         if(type === 'adjustment' || type === 'reserve_out') method = original.method;
+                    }
+                    db.transactions = db.transactions.filter(t => t.id != app.editingId); // Correção CRÍTICA: !=
+                }
+                
+                // Se for ajuste (taxa), garante que o valor seja negativo
+                let finalAmount = val;
+                if (type === 'adjustment') {
+                     finalAmount = -Math.abs(val); 
                 }
 
-                // Verifica se é edição de adjustment/reserve (valor negativo ou especial)
-                // Se for edição normal, salva como despesa
                 db.transactions.unshift({
                     id: app.editingId || Date.now(),
                     date: document.getElementById('expDate').value,
-                    type: 'expense', // Simplificação: ao editar, vira despesa comum
-                    category: document.getElementById('expCategory').value,
+                    type: type, 
+                    category: category,
                     description: document.getElementById('expDesc').value,
-                    amount: val,
-                    status: 'paid',
-                    method: 'Saída Caixa',
+                    amount: finalAmount,
+                    status: status,
+                    method: method,
                     dueDate: document.getElementById('expDate').value
                 });
 
@@ -782,7 +797,8 @@
 
             deleteTransaction: (id) => {
                 if(confirm('Excluir este lançamento?')) {
-                    db.transactions = db.transactions.filter(t => t.id !== id);
+                    // Correção CRÍTICA: != permite apagar string e number
+                    db.transactions = db.transactions.filter(t => t.id != id);
                     app.saveData();
                 }
             },
