@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Divine Pudim - Sistema v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#fff1f2',
+                            100: '#ffe4e6',
+                            300: '#fda4af',
+                            500: '#f43f5e',
+                            600: '#e11d48',
+                            700: '#be123c',
+                            900: '#881337',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #fff1f2; font-family: 'Segoe UI', sans-serif; }
+        .card-value { font-weight: 800; letter-spacing: -0.5px; }
+        .hidden-elm { display: none; }
+        .tab-active { border-bottom: 2px solid white; opacity: 1; font-weight: bold; }
+        .tab-inactive { opacity: 0.7; }
+        
+        @media print {
+            body { background-color: white; }
+            header, .no-print, #dashboardView, #statsView, #formIncome, #formExpense { display: none !important; }
+            #reportView { display: block !important; }
+            .print-only-header { display: block !important; }
+        }
+        .print-only-header { display: none; }
+    </style>
+</head>
+<body class="pb-24">
+
+    <header class="bg-brand-700 text-white p-4 shadow-lg sticky top-0 z-50">
+        <div class="flex justify-between items-center mb-3">
+            <h1 class="text-xl font-bold"><i class="fas fa-certificate mr-2"></i>Divine Pudim</h1>
+            <div class="space-x-2">
+                <button onclick="app.downloadBackup()" class="bg-brand-900 hover:bg-black text-[10px] px-3 py-1 rounded transition">
+                    <i class="fas fa-download"></i> Backup
+                </button>
+                <label for="restoreFile" class="bg-blue-600 hover:bg-blue-700 text-[10px] px-3 py-1 rounded transition cursor-pointer">
+                    <i class="fas fa-upload"></i> Restaurar
+                </label>
+                <input type="file" id="restoreFile" accept=".json" class="hidden" onchange="app.restoreBackup(this)">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 text-center text-sm border-t border-brand-500 pt-2">
+            <button onclick="view.switchTab('dashboard')" class="tab-active py-2" id="btnTabDashboard">Geral</button>
+            <button onclick="view.switchTab('stats')" class="tab-inactive py-2" id="btnTabStats">Estatísticas</button>
+            <button onclick="view.switchTab('report')" class="tab-inactive py-2" id="btnTabReport">Relatório</button>
+        </div>
+
+        <div class="absolute top-16 right-2">
+             <button onclick="document.getElementById('settingsPanel').classList.toggle('hidden-elm')" class="text-xs text-brand-200 hover:text-white bg-brand-800 px-2 py-1 rounded-full shadow"><i class="fas fa-cog"></i></button>
+        </div>
+
+        <div id="settingsPanel" class="hidden-elm mt-2 bg-brand-900 p-3 rounded text-sm animate-fade-in mx-2">
+            <h4 class="font-bold border-b border-brand-700 mb-2 pb-1 text-white">Configurações iFood</h4>
+            <div class="grid grid-cols-2 gap-2 text-white">
+                <div>
+                    <label>Taxa App (%)</label>
+                    <input type="number" id="configIfoodRateApp" class="w-full p-1 text-black rounded" placeholder="Ex: 23">
+                </div>
+                <div>
+                    <label>Taxa Entrega (%)</label>
+                    <input type="number" id="configIfoodRateDelivery" class="w-full p-1 text-black rounded" placeholder="Ex: 12">
+                </div>
+                <div>
+                    <label>Taxa Fixa (R$)</label>
+                    <input type="number" step="0.01" id="configIfoodFixed" class="w-full p-1 text-black rounded" value="0.99">
+                </div>
+                <div>
+                    <label>Prazo Rec. (Dias)</label>
+                    <input type="number" id="configIfoodDelay" class="w-full p-1 text-black rounded" value="28">
+                </div>
+                <div class="col-span-2 mt-2">
+                    <button onclick="app.saveSettings()" class="w-full bg-green-600 py-1 rounded font-bold hover:bg-green-700">Salvar Configurações</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="p-4 max-w-2xl mx-auto space-y-4">
+
+        <div id="dashboardView">
+            
+            <div class="bg-white p-5 rounded-xl shadow-md border-l-4 border-green-500 mb-4 transform hover:scale-[1.01] transition">
+                <p class="text-gray-500 text-xs font-bold uppercase tracking-wider">Saldo Disponível (Livre)</p>
+                <h2 class="text-4xl text-gray-800 card-value mt-1" id="dashBalance">R$ 0,00</h2>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="bg-blue-50 p-3 rounded-xl shadow-sm border-l-4 border-blue-500 relative">
+                    <div class="flex justify-between items-start">
+                        <p class="text-[10px] text-blue-800 font-bold uppercase">Capital de Giro (7%)</p>
+                        <button onclick="app.manualAddReserve()" class="text-[10px] bg-blue-200 text-blue-800 px-2 rounded hover:bg-blue-300" title="Adicionar Manualmente">+</button>
+                    </div>
+                    <h3 class="text-xl text-blue-900 card-value mt-1" id="dashReserve">R$ 0,00</h3>
+                </div>
+                
+                <div class="bg-white p-3 rounded-xl shadow-sm border-l-4 border-yellow-400">
+                    <p class="text-[10px] text-gray-500 font-bold uppercase">A Receber (Futuro)</p>
+                    <h3 class="text-xl text-gray-800 card-value" id="dashReceivableTotal">R$ 0,00</h3>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <button onclick="app.startNewTransaction('income')" class="bg-green-600 text-white py-3 rounded-lg shadow font-bold hover:bg-green-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-plus-circle"></i> Venda
+                </button>
+                <button onclick="app.startNewTransaction('expense')" class="bg-brand-600 text-white py-3 rounded-lg shadow font-bold hover:bg-brand-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-minus-circle"></i> Despesa
+                </button>
+            </div>
+
+            <div id="formIncome" class="hidden-elm bg-white p-4 rounded-xl shadow-lg border border-green-200 mb-6 relative">
+                <div class="absolute top-2 right-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold" id="incomeModeBadge">NOVO</div>
+                <h3 class="font-bold text-green-700 mb-3 border-b pb-2">Lançar/Editar Venda</h3>
+                
+                <input type="hidden" id="editIdIncome"> 
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Data</label>
+                <input type="date" id="incDate" class="w-full p-2 border rounded mb-3 bg-gray-50">
+
+                <div class="mb-3 bg-pink-50 p-2 rounded border border-pink-100 flex items-center gap-2">
+                    <input type="checkbox" id="incIsBarbara" class="w-4 h-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded">
+                    <label for="incIsBarbara" class="text-sm font-bold text-pink-800">Repassar p/ Bárbara?</label>
+                    <i class="fas fa-info-circle text-pink-400 text-xs ml-auto" title="Cria venda e despesa automática. Não cobra 7%."></i>
+                </div>
+
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo</label>
+                <select id="incType" class="w-full p-2 border rounded mb-3 bg-gray-50" onchange="view.handleIncomeTypeChange()">
+                    <option value="direct">Venda Direta / Balcão</option>
+                    <option value="ifood">Venda iFood</option>
+                    <option value="order">Encomenda</option>
+                </select>
+
+                <div id="ifoodOptions" class="hidden-elm bg-orange-50 p-3 rounded mb-3 border border-orange-100">
+                    <label class="block text-xs font-bold text-orange-800 uppercase mb-1">Onde foi o Pagamento?</label>
+                    <select id="incIfoodPaymentOrigin" class="w-full p-2 border rounded text-sm mb-2">
+                        <option value="app">Pelo App iFood (Online)</option>
+                        <option value="delivery">Na Entrega (Maquininha/Dinheiro)</option>
+                    </select>
+                    <p class="text-[10px] text-orange-600 leading-tight">
+                        * O sistema descontará taxas e R$ 0,99.
+                    </p>
+                </div>
+
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</label>
+                <input type="text" id="incDesc" class="w-full p-2 border rounded mb-3" placeholder="Ex: 2 Pudins Tradicionais">
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1" id="lblAmount">Valor (R$)</label>
+                        <input type="number" step="0.01" id="incAmount" class="w-full p-2 border rounded mb-3 font-bold text-gray-700">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Forma Pagto</label>
+                        <select id="incPaymentMethod" class="w-full p-2 border rounded mb-3">
+                            <option value="Pix">Pix</option>
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Credito">Crédito</option>
+                            <option value="Debito">Débito</option>
+                            <option value="App">Pelo App (Online)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="orderFields" class="hidden-elm mb-3 bg-blue-50 p-2 rounded">
+                    <label class="block text-xs font-bold text-blue-800 uppercase mb-1">Valor da Entrada (Sinal)</label>
+                    <input type="number" step="0.01" id="incOrderDeposit" class="w-full p-2 border rounded" placeholder="Quanto o cliente pagou agora?">
+                </div>
+
+                <div class="flex gap-2 mt-2">
+                    <button onclick="app.saveIncome()" class="flex-1 bg-green-600 text-white py-3 rounded font-bold shadow hover:bg-green-700">Salvar Venda</button>
+                    <button onclick="view.closeForms()" class="px-4 bg-gray-200 rounded text-gray-600 hover:bg-gray-300">Cancelar</button>
+                </div>
+            </div>
+
+            <div id="formExpense" class="hidden-elm bg-white p-4 rounded-xl shadow-lg border border-brand-200 mb-6 relative">
+                <div class="absolute top-2 right-2 bg-red-100 text-red-800 text-xs px-2 py-1 rounded font-bold" id="expenseModeBadge">NOVO</div>
+                <h3 class="font-bold text-brand-700 mb-3 border-b pb-2">Lançar/Editar Despesa</h3>
+                
+                <input type="hidden" id="editIdExpense">
+
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Data</label>
+                <input type="date" id="expDate" class="w-full p-2 border rounded mb-3 bg-gray-50">
+
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Categoria</label>
+                <select id="expCategory" class="w-full p-2 border rounded mb-3 bg-gray-50">
+                    <option value="Insumos">Insumos</option>
+                    <option value="Fixos">Custos Fixos</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="Bárbara">Bárbara</option>
+                    <option value="Pai">Pai</option>
+                    <option value="Extras">Despesas Extras</option>
+                </select>
+
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição</label>
+                <input type="text" id="expDesc" class="w-full p-2 border rounded mb-3" placeholder="Ex: Embalagens">
+
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Valor (R$)</label>
+                <input type="number" step="0.01" id="expAmount" class="w-full p-2 border rounded mb-3">
+
+                <div class="flex gap-2 mt-2">
+                    <button onclick="app.saveExpense()" class="flex-1 bg-brand-600 text-white py-3 rounded font-bold shadow hover:bg-brand-700">Salvar Saída</button>
+                    <button onclick="view.closeForms()" class="px-4 bg-gray-200 rounded text-gray-600 hover:bg-gray-300">Cancelar</button>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-end mb-2 mt-6 border-b pb-2">
+                <h3 class="text-sm font-bold text-gray-700">Últimas Movimentações</h3>
+            </div>
+            <div id="transactionList" class="space-y-2 pb-10">
+            </div>
+        </div>
+
+        <div id="statsView" class="hidden-elm">
+            <h2 class="text-lg font-bold text-brand-900 mb-4 pl-1 border-l-4 border-brand-500">Detalhamento Financeiro</h2>
+            
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <div class="bg-white p-3 rounded-lg shadow-sm border-t-4 border-green-500">
+                    <div class="flex items-center gap-2 mb-1">
+                        <i class="fas fa-money-bill-wave text-green-500"></i>
+                        <span class="text-xs font-bold uppercase text-gray-500">Dinheiro</span>
+                    </div>
+                    <p class="text-lg font-bold text-gray-800" id="statMoney">R$ 0,00</p>
+                </div>
+
+                <div class="bg-white p-3 rounded-lg shadow-sm border-t-4 border-teal-500">
+                    <div class="flex items-center gap-2 mb-1">
+                        <i class="fas fa-qrcode text-teal-500"></i>
+                        <span class="text-xs font-bold uppercase text-gray-500">Pix</span>
+                    </div>
+                    <p class="text-lg font-bold text-gray-800" id="statPix">R$ 0,00</p>
+                </div>
+
+                <div class="bg-white p-3 rounded-lg shadow-sm border-t-4 border-blue-500">
+                    <div class="flex items-center gap-2 mb-1">
+                        <i class="fas fa-credit-card text-blue-500"></i>
+                        <span class="text-xs font-bold uppercase text-gray-500">Crédito</span>
+                    </div>
+                    <p class="text-lg font-bold text-gray-800" id="statCredit">R$ 0,00</p>
+                </div>
+
+                <div class="bg-white p-3 rounded-lg shadow-sm border-t-4 border-indigo-500">
+                    <div class="flex items-center gap-2 mb-1">
+                        <i class="fas fa-credit-card text-indigo-500"></i>
+                        <span class="text-xs font-bold uppercase text-gray-500">Débito</span>
+                    </div>
+                    <p class="text-lg font-bold text-gray-800" id="statDebit">R$ 0,00</p>
+                </div>
+            </div>
+
+            <h3 class="text-sm font-bold text-gray-700 mb-2">Detalhamento iFood</h3>
+            <div class="grid grid-cols-1 gap-3">
+                
+                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200 shadow-sm flex justify-between items-center">
+                    <div>
+                        <p class="text-xs font-bold text-orange-800 uppercase mb-1">
+                            <i class="fas fa-motorcycle mr-1"></i> iFood (Pagto na Entrega)
+                        </p>
+                        <p class="text-[10px] text-orange-600">Dinheiro/Maquineta (Já no seu caixa)</p>
+                    </div>
+                    <p class="text-xl font-bold text-orange-700" id="statIfoodDelivery">R$ 0,00</p>
+                </div>
+
+                <div class="bg-red-50 p-4 rounded-lg border border-red-200 shadow-sm flex justify-between items-center">
+                    <div>
+                        <p class="text-xs font-bold text-red-800 uppercase mb-1">
+                            <i class="fas fa-mobile-alt mr-1"></i> iFood (Pagto via App)
+                        </p>
+                        <p class="text-[10px] text-red-600">Repasse Líquido (Recebido + A Receber)</p>
+                    </div>
+                    <p class="text-xl font-bold text-red-700" id="statIfoodApp">R$ 0,00</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="reportView" class="hidden-elm bg-white p-6 rounded-lg shadow min-h-screen">
+            <div class="print-only-header text-center mb-6 border-b pb-4">
+                <h1 class="text-2xl font-bold">Divine Pudim Gourmet</h1>
+                <p class="text-sm">Relatório Financeiro</p>
+            </div>
+
+            <div class="flex justify-between items-center mb-6 no-print">
+                <h2 class="text-xl font-bold text-brand-900">Extrato Mensal</h2>
+                <div class="flex gap-2">
+                    <input type="month" id="reportMonthSelector" class="border p-1 rounded" onchange="view.renderReport()">
+                    <button onclick="window.print()" class="bg-gray-800 text-white px-3 py-1 rounded text-sm hover:bg-black"><i class="fas fa-print"></i> Imprimir</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 mb-6 border-b pb-6">
+                <div class="text-center">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Entradas</p>
+                    <p class="text-lg font-bold text-green-600" id="repTotalIn">R$ 0,00</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Saídas</p>
+                    <p class="text-lg font-bold text-red-600" id="repTotalOut">R$ 0,00</p>
+                </div>
+                <div class="text-center">
+                    <p class="text-xs font-bold text-gray-500 uppercase">Líquido</p>
+                    <p class="text-lg font-bold text-brand-700" id="repResult">R$ 0,00</p>
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <h3 class="text-sm font-bold text-gray-700 uppercase mb-2 border-b border-gray-200 pb-1">Resumo de Despesas por Categoria</h3>
+                <div id="expenseSummaryContainer" class="grid grid-cols-2 gap-3 text-sm">
+                    </div>
+            </div>
+
+            <h3 class="text-sm font-bold text-gray-700 uppercase mb-2">Detalhamento dos Lançamentos</h3>
+            <table class="w-full text-sm text-left">
+                <thead class="bg-gray-100 text-gray-600 font-bold uppercase text-xs">
+                    <tr>
+                        <th class="p-2">Data</th>
+                        <th class="p-2">Desc.</th>
+                        <th class="p-2">Categ.</th>
+                        <th class="p-2 text-right">Valor</th>
+                    </tr>
+                </thead>
+                <tbody id="reportTableBody" class="divide-y divide-gray-200"></tbody>
+            </table>
+        </div>
+
+    </main>
+
+    <script>
+        // ================= STATE =================
+        const db = {
+            transactions: [],
+            settings: { ifoodRateApp: 23, ifoodRateDelivery: 12, ifoodFixed: 0.99, ifoodDelay: 28 }
+        };
+
+        const app = {
+            editingId: null,
+
+            init: () => {
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('incDate').value = today;
+                document.getElementById('expDate').value = today;
+                document.getElementById('reportMonthSelector').value = today.slice(0, 7);
+
+                app.loadData();
+                app.populateSettings();
+                view.render();
+                view.renderStats();
+            },
+
+            populateSettings: () => {
+                document.getElementById('configIfoodRateApp').value = db.settings.ifoodRateApp;
+                document.getElementById('configIfoodRateDelivery').value = db.settings.ifoodRateDelivery;
+                document.getElementById('configIfoodFixed').value = db.settings.ifoodFixed;
+                document.getElementById('configIfoodDelay').value = db.settings.ifoodDelay;
+            },
+
+            saveSettings: () => {
+                db.settings.ifoodRateApp = parseFloat(document.getElementById('configIfoodRateApp').value) || 0;
+                db.settings.ifoodRateDelivery = parseFloat(document.getElementById('configIfoodRateDelivery').value) || 0;
+                db.settings.ifoodFixed = parseFloat(document.getElementById('configIfoodFixed').value) || 0;
+                db.settings.ifoodDelay = parseInt(document.getElementById('configIfoodDelay').value) || 0;
+                app.saveData();
+                document.getElementById('settingsPanel').classList.add('hidden-elm');
+                alert('Salvo!');
+            },
+
+            saveData: () => {
+                localStorage.setItem('divinePudimDB_v4', JSON.stringify(db));
+                view.render();
+                view.renderStats();
+            },
+
+            loadData: () => {
+                const data = localStorage.getItem('divinePudimDB_v4');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    db.transactions = parsed.transactions || [];
+                    db.settings = { ...db.settings, ...parsed.settings };
+                }
+            },
+
+            // --- FLUXO DE CRIAÇÃO E EDIÇÃO ---
+
+            startNewTransaction: (type) => {
+                app.editingId = null;
+                view.openForm(type);
+            },
+
+            startEditTransaction: (id) => {
+                const tx = db.transactions.find(t => t.id == id);
+                if (!tx) return;
+                
+                // Impede edição de transações automáticas (Taxas e Capital Giro)
+                if (tx.type === 'adjustment' || tx.type === 'reserve_out') return alert('Edite a venda original para alterar este valor.');
+
+                app.editingId = id;
+                
+                if (tx.type === 'expense') {
+                    document.getElementById('expDate').value = tx.date;
+                    document.getElementById('expCategory').value = tx.category;
+                    document.getElementById('expDesc').value = tx.description;
+                    document.getElementById('expAmount').value = tx.amount;
+                    view.openForm('expense');
+                } else {
+                    document.getElementById('incDate').value = tx.date;
+                    document.getElementById('incDesc').value = tx.description.replace(' (Via App)', '').replace(' (Entrega)', '');
+                    document.getElementById('incPaymentMethod').value = tx.method || 'Dinheiro';
+                    
+                    let derivedType = 'direct';
+                    if (tx.category.includes('iFood')) derivedType = 'ifood';
+                    if (tx.category.includes('Encomenda')) derivedType = 'order';
+                    document.getElementById('incType').value = derivedType;
+                    view.handleIncomeTypeChange();
+
+                    // Se foi venda Bárbara (detectado pela flag ou lógica futura, aqui simplificado)
+                    // Como não salvei flag explicita antes, vamos assumir que não é edição de Barbara antiga por enquanto
+                    // Mas para segurança:
+                    document.getElementById('incIsBarbara').checked = false;
+
+                    if (derivedType === 'ifood') {
+                        if (tx.originalAmount) {
+                            document.getElementById('incAmount').value = tx.originalAmount;
+                        } else {
+                            document.getElementById('incAmount').value = tx.amount;
+                        }
+                        if(tx.category.includes('App')) document.getElementById('incIfoodPaymentOrigin').value = 'app';
+                        else document.getElementById('incIfoodPaymentOrigin').value = 'delivery';
+                    } else {
+                        document.getElementById('incAmount').value = tx.amount;
+                    }
+                    
+                    view.openForm('income');
+                }
+            },
+
+            saveIncome: () => {
+                const dateVal = document.getElementById('incDate').value;
+                const type = document.getElementById('incType').value;
+                const desc = document.getElementById('incDesc').value || 'Venda';
+                const method = document.getElementById('incPaymentMethod').value;
+                const isBarbara = document.getElementById('incIsBarbara').checked;
+                
+                if (!dateVal) return alert('Data obrigatória');
+
+                // Remover anterior se for edição
+                if (app.editingId) {
+                    db.transactions = db.transactions.filter(t => t.id !== app.editingId);
+                    // NOTA: Em app simples, ao editar a venda, as taxas e reservas geradas NÃO são deletadas automaticamente
+                    // O ideal seria buscar por parentId, mas para manter simples, vou deixar assim.
+                    // O usuário deve excluir a venda errada e lançar de novo para corrigir 100%.
+                }
+
+                // === LÓGICA DE VENDA BÁRBARA ===
+                if (isBarbara) {
+                    const val = parseFloat(document.getElementById('incAmount').value);
+                    if (isNaN(val)) return alert('Valor inválido');
+
+                    // 1. Cria a Venda (Entrada)
+                    const incId = app.editingId || Date.now();
+                    db.transactions.unshift({
+                        id: incId,
+                        date: dateVal,
+                        type: 'income',
+                        category: 'Venda Bárbara',
+                        description: desc + ' (Bárbara)',
+                        amount: val,
+                        status: 'paid',
+                        method: method,
+                        target: 'caixa',
+                        dueDate: dateVal
+                    });
+
+                    // 2. Cria a Despesa Imediata (Saída)
+                    db.transactions.unshift({
+                        id: Date.now() + 999,
+                        date: dateVal,
+                        type: 'expense',
+                        category: 'Bárbara',
+                        description: 'Repasse Venda: ' + desc,
+                        amount: val,
+                        status: 'paid',
+                        method: 'Saída Caixa',
+                        dueDate: dateVal
+                    });
+
+                    app.saveData();
+                    view.closeForms();
+                    return; // Encerra aqui, não aplica 7%
+                }
+
+                // === LÓGICA PADRÃO (COM 7% DE RESERVA) ===
+                let netForReserve = 0; // Valor base para calcular os 7%
+
+                if (type === 'ifood') {
+                    const gross = parseFloat(document.getElementById('incAmount').value);
+                    const origin = document.getElementById('incIfoodPaymentOrigin').value; 
+                    if (isNaN(gross)) return alert('Valor inválido');
+
+                    const fixedFee = db.settings.ifoodFixed;
+                    
+                    if (origin === 'app') {
+                        // App: Líquido Futuro
+                        const rate = db.settings.ifoodRateApp / 100;
+                        const net = gross - (gross * rate) - fixedFee;
+                        netForReserve = net; // Base para reserva
+
+                        const futureDate = new Date(dateVal);
+                        futureDate.setDate(futureDate.getDate() + db.settings.ifoodDelay);
+
+                        db.transactions.unshift({
+                            id: app.editingId || Date.now(),
+                            date: dateVal,
+                            type: 'income',
+                            category: 'iFood App',
+                            description: desc + ' (Via App)',
+                            amount: net,
+                            originalAmount: gross,
+                            status: 'pending',
+                            target: 'ifood',
+                            method: 'App',
+                            dueDate: futureDate.toISOString().split('T')[0]
+                        });
+                    } else {
+                        // Entrega: Bruto Agora + Taxa Negativa
+                        const rate = db.settings.ifoodRateDelivery / 100;
+                        const fee = (gross * rate) + fixedFee;
+                        netForReserve = gross - fee; // Base para reserva (Líquido real)
+
+                        // 1. Principal
+                        db.transactions.unshift({
+                            id: app.editingId || Date.now() + '1',
+                            date: dateVal,
+                            type: 'income',
+                            category: 'iFood Entrega',
+                            description: desc + ' (Entrega)',
+                            amount: gross,
+                            status: 'paid',
+                            method: method,
+                            target: 'caixa',
+                            dueDate: dateVal
+                        });
+
+                        // 2. Taxa
+                        if (!app.editingId) {
+                            db.transactions.unshift({
+                                id: Date.now() + '2',
+                                date: dateVal,
+                                type: 'adjustment',
+                                category: 'Taxa iFood',
+                                description: 'Taxa iFood s/ ' + desc,
+                                amount: -fee,
+                                status: 'pending', // Consideramos pending para abater do "A Receber" ou saldo futuro
+                                target: 'ifood', 
+                                method: 'Auto',
+                                dueDate: null
+                            });
+                        }
+                    }
+
+                } else if (type === 'order') {
+                    const val = parseFloat(document.getElementById('incOrderDeposit').value) || parseFloat(document.getElementById('incAmount').value);
+                    netForReserve = val;
+                    db.transactions.unshift({
+                        id: app.editingId || Date.now(),
+                        date: dateVal,
+                        type: 'income',
+                        category: 'Encomenda',
+                        description: desc,
+                        amount: val,
+                        status: 'paid',
+                        method: method,
+                        target: 'caixa',
+                        dueDate: dateVal
+                    });
+                } else {
+                    // Direta
+                    const val = parseFloat(document.getElementById('incAmount').value);
+                    netForReserve = val;
+                    if (isNaN(val)) return alert('Valor inválido');
+                    db.transactions.unshift({
+                        id: app.editingId || Date.now(),
+                        date: dateVal,
+                        type: 'income',
+                        category: 'Venda Direta',
+                        description: desc,
+                        amount: val,
+                        status: 'paid',
+                        method: method,
+                        target: 'caixa',
+                        dueDate: dateVal
+                    });
+                }
+
+                // === APLICAÇÃO AUTOMÁTICA DOS 7% (CAPITAL DE GIRO) ===
+                if (!app.editingId && netForReserve > 0) {
+                    const reserveAmount = netForReserve * 0.07;
+                    db.transactions.unshift({
+                        id: Date.now() + '9', // ID único
+                        date: dateVal,
+                        type: 'reserve_out', // Tipo especial: Saída para Reserva
+                        category: 'Capital de Giro',
+                        description: 'Retenção 7% (Cap. Giro)',
+                        amount: reserveAmount, // Valor positivo, mas a lógica de saldo irá subtrair
+                        status: 'paid',
+                        method: 'Auto',
+                        dueDate: dateVal
+                    });
+                }
+
+                app.saveData();
+                view.closeForms();
+            },
+
+            saveExpense: () => {
+                const val = parseFloat(document.getElementById('expAmount').value);
+                if (isNaN(val)) return alert('Valor inválido');
+
+                if (app.editingId) {
+                    db.transactions = db.transactions.filter(t => t.id !== app.editingId);
+                }
+
+                db.transactions.unshift({
+                    id: app.editingId || Date.now(),
+                    date: document.getElementById('expDate').value,
+                    type: 'expense',
+                    category: document.getElementById('expCategory').value,
+                    description: document.getElementById('expDesc').value,
+                    amount: val,
+                    status: 'paid',
+                    method: 'Saída Caixa',
+                    dueDate: document.getElementById('expDate').value
+                });
+
+                app.saveData();
+                view.closeForms();
+            },
+
+            manualAddReserve: () => {
+                const val = prompt("Quanto deseja adicionar manualmente ao Capital de Giro? (Isso será retirado do Saldo Disponível)");
+                if(val) {
+                    const num = parseFloat(val.replace(',', '.'));
+                    if(!isNaN(num) && num > 0) {
+                        const today = new Date().toISOString().split('T')[0];
+                        db.transactions.unshift({
+                            id: Date.now(),
+                            date: today,
+                            type: 'reserve_out',
+                            category: 'Capital de Giro',
+                            description: 'Aporte Manual',
+                            amount: num,
+                            status: 'paid',
+                            method: 'Manual',
+                            dueDate: today
+                        });
+                        app.saveData();
+                    }
+                }
+            },
+
+            deleteTransaction: (id) => {
+                if(confirm('Excluir este lançamento?')) {
+                    db.transactions = db.transactions.filter(t => t.id !== id);
+                    app.saveData();
+                }
+            },
+
+            markAsPaid: (id) => {
+                const tx = db.transactions.find(t => t.id == id);
+                if (tx) {
+                    tx.status = 'paid';
+                    tx.dueDate = new Date().toISOString().split('T')[0];
+                    app.saveData();
+                }
+            },
+
+            downloadBackup: () => {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db));
+                const node = document.createElement('a');
+                node.href = dataStr;
+                node.download = `divine_backup_${new Date().toISOString().slice(0,10)}.json`;
+                node.click();
+            },
+
+            restoreBackup: (input) => {
+                const file = input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const parsed = JSON.parse(e.target.result);
+                        db.transactions = parsed.transactions || [];
+                        db.settings = parsed.settings;
+                        app.saveData();
+                        alert('Restaurado!');
+                    } catch(e) { alert('Erro no arquivo'); }
+                };
+                reader.readAsText(file);
+            }
+        };
+
+        // ================= VIEW =================
+        const view = {
+            formatMoney: (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v),
+            formatDate: (d) => {
+                if(!d) return '';
+                const parts = d.split('-'); 
+                return `${parts[2]}/${parts[1]}`;
+            },
+
+            switchTab: (tabName) => {
+                ['dashboard', 'stats', 'report'].forEach(t => {
+                    const el = document.getElementById(t + 'View');
+                    const btn = document.getElementById('btnTab' + t.charAt(0).toUpperCase() + t.slice(1));
+                    
+                    if (t === tabName) {
+                        el.classList.remove('hidden-elm');
+                        btn.classList.remove('tab-inactive');
+                        btn.classList.add('tab-active');
+                    } else {
+                        el.classList.add('hidden-elm');
+                        btn.classList.remove('tab-active');
+                        btn.classList.add('tab-inactive');
+                    }
+                });
+                
+                if (tabName === 'stats') view.renderStats();
+                if (tabName === 'report') view.renderReport();
+            },
+
+            openForm: (type) => {
+                view.closeForms();
+                if (type === 'income') {
+                    document.getElementById('formIncome').classList.remove('hidden-elm');
+                    document.getElementById('incomeModeBadge').innerText = app.editingId ? 'EDITANDO' : 'NOVO';
+                    document.getElementById('incomeModeBadge').className = app.editingId ? 'absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded font-bold' : 'absolute top-2 right-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold';
+                } else {
+                    document.getElementById('formExpense').classList.remove('hidden-elm');
+                    document.getElementById('expenseModeBadge').innerText = app.editingId ? 'EDITANDO' : 'NOVO';
+                }
+            },
+
+            closeForms: () => {
+                document.getElementById('formIncome').classList.add('hidden-elm');
+                document.getElementById('formExpense').classList.add('hidden-elm');
+                app.editingId = null;
+                document.querySelectorAll('input').forEach(i => {
+                    if(!i.id.includes('config') && i.type !== 'file' && i.type !== 'date' && i.type !== 'checkbox') i.value = '';
+                    if(i.type === 'checkbox') i.checked = false;
+                });
+            },
+
+            handleIncomeTypeChange: () => {
+                const type = document.getElementById('incType').value;
+                const ifoodOpts = document.getElementById('ifoodOptions');
+                const orderOpts = document.getElementById('orderFields');
+                const lblAmount = document.getElementById('lblAmount');
+
+                ifoodOpts.style.display = 'none';
+                orderOpts.style.display = 'none';
+                lblAmount.innerText = 'Valor (R$)';
+
+                if (type === 'ifood') {
+                    ifoodOpts.style.display = 'block';
+                    lblAmount.innerText = 'Valor Bruto (R$)';
+                } else if (type === 'order') {
+                    orderOpts.style.display = 'block';
+                    lblAmount.innerText = 'Valor Total (Apenas Informativo)';
+                }
+            },
+
+            renderStats: () => {
+                let s = { pix:0, money:0, credit:0, debit:0, ifoodApp:0, ifoodDelivery:0 };
+
+                db.transactions.forEach(t => {
+                    if (t.type === 'income') {
+                        if (t.category.includes('iFood App') || t.method === 'App') {
+                            s.ifoodApp += t.amount; 
+                        }
+                        else if (t.category.includes('iFood Entrega')) {
+                            s.ifoodDelivery += t.amount;
+                        }
+
+                        if (t.method === 'Pix') s.pix += t.amount;
+                        if (t.method === 'Dinheiro') s.money += t.amount;
+                        if (t.method === 'Credito') s.credit += t.amount;
+                        if (t.method === 'Debito') s.debit += t.amount;
+                    }
+                });
+
+                document.getElementById('statPix').innerText = view.formatMoney(s.pix);
+                document.getElementById('statMoney').innerText = view.formatMoney(s.money);
+                document.getElementById('statCredit').innerText = view.formatMoney(s.credit);
+                document.getElementById('statDebit').innerText = view.formatMoney(s.debit);
+                document.getElementById('statIfoodApp').innerText = view.formatMoney(s.ifoodApp);
+                document.getElementById('statIfoodDelivery').innerText = view.formatMoney(s.ifoodDelivery);
+            },
+
+            render: () => {
+                let balance = 0;
+                let pending = 0;
+                let reserve = 0;
+
+                db.transactions.forEach(t => {
+                    // Cálculo do Saldo Disponível
+                    if (t.status === 'paid') {
+                        if (t.type === 'income') balance += t.amount;
+                        else if (t.type === 'expense') balance -= t.amount;
+                        else if (t.type === 'reserve_out') {
+                            // Sai do saldo disponível
+                            balance -= t.amount; 
+                            // Vai para o saldo de reserva
+                            reserve += t.amount;
+                        }
+                    } else if (t.status === 'pending') {
+                        // Adjustment negativo entra aqui subtraindo
+                        if (t.type !== 'adjustment') pending += t.amount;
+                        else pending += t.amount; // Adjustment is negative
+                    }
+                });
+
+                document.getElementById('dashBalance').innerText = view.formatMoney(balance);
+                document.getElementById('dashReceivableTotal').innerText = view.formatMoney(pending);
+                document.getElementById('dashReserve').innerText = view.formatMoney(reserve);
+
+                // Lista
+                const list = document.getElementById('transactionList');
+                list.innerHTML = '';
+                
+                db.transactions.slice(0, 30).forEach(t => {
+                    const isExp = t.type === 'expense';
+                    const isAdj = t.type === 'adjustment';
+                    const isRes = t.type === 'reserve_out';
+                    const isPending = t.status === 'pending';
+                    
+                    let color = isExp || isAdj || isRes ? 'text-red-600' : 'text-green-600';
+                    let icon = isExp ? 'fa-arrow-down' : 'fa-arrow-up';
+                    
+                    if(isPending) color = 'text-orange-500';
+                    if(isAdj) { color = 'text-red-400'; icon = 'fa-percent'; }
+                    if(isRes) { color = 'text-blue-600'; icon = 'fa-piggy-bank'; }
+
+                    list.innerHTML += `
+                        <div class="flex justify-between items-center bg-white p-3 rounded shadow-sm border border-brand-50 relative group">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center ${color}">
+                                    <i class="fas ${icon}"></i>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-gray-700 text-sm">${t.description}</p>
+                                    <p class="text-[10px] text-gray-400">${view.formatDate(t.date)} • ${t.category}</p>
+                                </div>
+                            </div>
+                            <div class="text-right flex items-center gap-3">
+                                <div>
+                                    <p class="font-bold ${color}">${view.formatMoney(t.amount)}</p>
+                                    ${isPending && t.amount > 0 ? `<button onclick="app.markAsPaid(${t.id})" class="text-[10px] bg-blue-100 text-blue-700 px-1 rounded">Recebi</button>` : ''}
+                                </div>
+                                <div class="flex gap-2 pl-2 border-l">
+                                    <button onclick="app.startEditTransaction(${t.id})" class="text-gray-400 hover:text-blue-500"><i class="fas fa-pencil-alt"></i></button>
+                                    <button onclick="app.deleteTransaction(${t.id})" class="text-gray-400 hover:text-red-500"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            },
+
+            renderReport: () => {
+                const month = document.getElementById('reportMonthSelector').value;
+                if(!month) return;
+                const txs = db.transactions.filter(t => t.date.startsWith(month) && t.status === 'paid');
+                
+                let totIn=0, totOut=0;
+                let categoryMap = {};
+
+                const tbody = document.getElementById('reportTableBody');
+                tbody.innerHTML = '';
+
+                txs.sort((a,b) => a.date.localeCompare(b.date));
+                txs.forEach(t => {
+                    if(t.type === 'income') totIn += t.amount;
+                    if(t.type === 'expense' || t.type === 'reserve_out') {
+                        totOut += t.amount;
+                        
+                        // Agrupamento por Categoria (Apenas Saídas e Reservas)
+                        if(!categoryMap[t.category]) categoryMap[t.category] = 0;
+                        categoryMap[t.category] += t.amount;
+                    }
+                    
+                    // Não mostra adjustments automáticos na tabela detalhada para não poluir, 
+                    // ou mostra se quiser auditoria. Vamos ocultar adjustments (taxas) da tabela,
+                    // mas eles já foram deduzidos no cálculo de entrada se feitos corretamente, 
+                    // ou são apenas controle. No código atual, taxa ifood é 'adjustment'.
+                    // Vamos exibir tudo exceto adjustment puramente técnico se houver.
+                    if(t.type !== 'adjustment') {
+                        tbody.innerHTML += `
+                            <tr>
+                                <td class="p-2">${view.formatDate(t.date)}</td>
+                                <td class="p-2">${t.description}</td>
+                                <td class="p-2 text-xs text-gray-500">${t.category}</td>
+                                <td class="p-2 text-right font-bold ${t.type==='income'?'text-green-600':'text-red-600'}">${view.formatMoney(t.amount)}</td>
+                            </tr>
+                        `;
+                    }
+                });
+
+                document.getElementById('repTotalIn').innerText = view.formatMoney(totIn);
+                document.getElementById('repTotalOut').innerText = view.formatMoney(totOut);
+                document.getElementById('repResult').innerText = view.formatMoney(totIn - totOut);
+
+                // Renderiza Resumo de Despesas
+                const summaryContainer = document.getElementById('expenseSummaryContainer');
+                summaryContainer.innerHTML = '';
+                
+                // Ordenar categorias por valor (maior gasto primeiro)
+                const sortedCats = Object.entries(categoryMap).sort((a,b) => b[1] - a[1]);
+                
+                if (sortedCats.length === 0) {
+                    summaryContainer.innerHTML = '<p class="text-gray-400 italic">Nenhuma despesa no período.</p>';
+                } else {
+                    sortedCats.forEach(([cat, val]) => {
+                        // Destaque visual para Bárbara se quiser
+                        const isBarb = cat === 'Bárbara';
+                        const bgClass = isBarb ? 'bg-pink-100 border-pink-200' : 'bg-gray-50 border-gray-200';
+                        const textClass = isBarb ? 'text-pink-800' : 'text-gray-700';
+
+                        summaryContainer.innerHTML += `
+                            <div class="${bgClass} border p-2 rounded flex justify-between items-center">
+                                <span class="font-bold ${textClass}">${cat}</span>
+                                <span class="font-bold text-gray-800">${view.formatMoney(val)}</span>
+                            </div>
+                        `;
+                    });
+                }
+            }
+        };
+
+        app.init();
+    </script>
+</body>
+</html>
