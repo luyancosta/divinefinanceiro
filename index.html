@@ -169,6 +169,7 @@
                     <option value="direct">Venda Direta / Balcão</option>
                     <option value="ifood">Venda iFood</option>
                     <option value="order">Encomenda</option>
+                    <option value="ticket">Ticket Alimentação</option>
                 </select>
 
                 <div id="ifoodOptions" class="hidden-elm bg-orange-50 p-3 rounded mb-3 border border-orange-100">
@@ -198,6 +199,7 @@
                             <option value="Credito">Crédito</option>
                             <option value="Debito">Débito</option>
                             <option value="App">Pelo App (Online)</option>
+                            <option value="Ticket">Ticket/VR</option>
                         </select>
                     </div>
                 </div>
@@ -543,6 +545,8 @@
                     let derivedType = 'direct';
                     if (tx.category.includes('iFood')) derivedType = 'ifood';
                     if (tx.category.includes('Encomenda')) derivedType = 'order';
+                    if (tx.category.includes('Ticket')) derivedType = 'ticket'; // Adicionado verificação para ticket
+
                     document.getElementById('incType').value = derivedType;
                     view.handleIncomeTypeChange();
 
@@ -613,7 +617,7 @@
                     return;
                 }
 
-                // === LÓGICA PADRÃO (COM 7% DE RESERVA) ===
+                // === LÓGICA PADRÃO ===
                 let netForReserve = 0; 
 
                 if (type === 'ifood') {
@@ -626,7 +630,9 @@
                     if (origin === 'app') {
                         const rate = db.settings.ifoodRateApp / 100;
                         const net = gross - (gross * rate) - fixedFee;
-                        netForReserve = net;
+                        
+                        // ALTERAÇÃO: Definir como 0 para não cobrar os 7%
+                        netForReserve = 0; 
 
                         const futureDate = new Date(dateVal);
                         futureDate.setDate(futureDate.getDate() + db.settings.ifoodDelay);
@@ -647,7 +653,9 @@
                     } else {
                         const rate = db.settings.ifoodRateDelivery / 100;
                         const fee = (gross * rate) + fixedFee;
-                        netForReserve = gross - fee; 
+                        
+                        // ALTERAÇÃO: Definir como 0 para não cobrar os 7%
+                        netForReserve = 0;
 
                         db.transactions.unshift({
                             id: app.editingId || Date.now() + '1',
@@ -680,7 +688,7 @@
 
                 } else if (type === 'order') {
                     const val = parseFloat(document.getElementById('incOrderDeposit').value) || parseFloat(document.getElementById('incAmount').value);
-                    netForReserve = val;
+                    netForReserve = val; // Encomenda mantém os 7%
                     db.transactions.unshift({
                         id: app.editingId || Date.now(),
                         date: dateVal,
@@ -693,9 +701,27 @@
                         target: 'caixa',
                         dueDate: dateVal
                     });
+                } else if (type === 'ticket') {
+                    // === ALTERAÇÃO: BLOCO NOVO PARA TICKET ALIMENTAÇÃO ===
+                    const val = parseFloat(document.getElementById('incAmount').value);
+                    netForReserve = 0; // Não deduz 7%
+                    if (isNaN(val)) return alert('Valor inválido');
+                    
+                    db.transactions.unshift({
+                        id: app.editingId || Date.now(),
+                        date: dateVal,
+                        type: 'income',
+                        category: 'Ticket Alimentação',
+                        description: desc,
+                        amount: val,
+                        status: 'paid',
+                        method: 'Ticket', // Salva método como Ticket
+                        target: 'caixa',
+                        dueDate: dateVal
+                    });
                 } else {
                     const val = parseFloat(document.getElementById('incAmount').value);
-                    netForReserve = val;
+                    netForReserve = val; // Venda normal mantém os 7%
                     if (isNaN(val)) return alert('Valor inválido');
                     db.transactions.unshift({
                         id: app.editingId || Date.now(),
@@ -711,6 +737,7 @@
                     });
                 }
 
+                // Só deduz o Cap. Giro se netForReserve for maior que 0
                 if (!app.editingId && netForReserve > 0) {
                     const reserveAmount = netForReserve * 0.07;
                     db.transactions.unshift({
