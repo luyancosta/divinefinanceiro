@@ -169,7 +169,6 @@
                     <option value="direct">Venda Direta / Balcão</option>
                     <option value="ifood">Venda iFood</option>
                     <option value="order">Encomenda</option>
-                    <option value="ticket">Ticket Alimentação</option>
                 </select>
 
                 <div id="ifoodOptions" class="hidden-elm bg-orange-50 p-3 rounded mb-3 border border-orange-100">
@@ -198,8 +197,8 @@
                             <option value="Dinheiro">Dinheiro</option>
                             <option value="Credito">Crédito</option>
                             <option value="Debito">Débito</option>
+                            <option value="Ticket Alimentação">Ticket Alimentação</option>
                             <option value="App">Pelo App (Online)</option>
-                            <option value="Ticket">Ticket/VR</option>
                         </select>
                     </div>
                 </div>
@@ -392,7 +391,6 @@
         // ================= STATE =================
         const db = {
             transactions: [],
-            // TAXAS ATUALIZADAS CONFORME IMAGEM
             settings: { ifoodRateApp: 16.69, ifoodRateDelivery: 13.49, ifoodFixed: 0.99, ifoodDelay: 28 }
         };
 
@@ -405,21 +403,17 @@
                 document.getElementById('expDate').value = today;
                 document.getElementById('reportMonthSelector').value = today.slice(0, 7);
 
-                // Configura o ouvinte de autenticação
                 auth.onAuthStateChanged((user) => {
                     if (user) {
-                        // Se já estiver logado (sessão salva no navegador)
                         document.getElementById('loginOverlay').classList.add('hidden-elm');
                         document.getElementById('connectionStatus').classList.remove('hidden-elm');
                         app.loadData();
                     } else {
-                        // Se não estiver logado, garante que a tela de login apareça
                         document.getElementById('loginOverlay').classList.remove('hidden-elm');
                         document.getElementById('connectionStatus').classList.add('hidden-elm');
                     }
                 });
                 
-                // View inicial vazia
                 view.render();
                 view.renderStats();
             },
@@ -442,7 +436,6 @@
 
                 auth.signInWithEmailAndPassword(email, pass)
                     .then(() => {
-                        // O onAuthStateChanged vai lidar com a tela
                         btn.innerText = "ENTRAR";
                         btn.disabled = false;
                     })
@@ -510,15 +503,13 @@
                 });
             },
 
-            // --- FLUXO DE CRIAÇÃO E EDIÇÃO ---
-
             startNewTransaction: (type) => {
                 app.editingId = null;
                 view.openForm(type);
             },
 
             startEditTransaction: (id) => {
-                const tx = db.transactions.find(t => t.id == id); // == Aceita string e numero
+                const tx = db.transactions.find(t => t.id == id);
                 if (!tx) return;
                 
                 app.editingId = id;
@@ -530,11 +521,9 @@
                     document.getElementById('expAmount').value = tx.amount;
                     view.openForm('expense');
                 } else if (tx.type === 'adjustment' || tx.type === 'reserve_out') {
-                    // Edição de itens automáticos
                     document.getElementById('expDate').value = tx.date;
                     document.getElementById('expCategory').value = 'Extras'; 
                     document.getElementById('expDesc').value = tx.description;
-                    // Mostra sempre positivo para editar
                     document.getElementById('expAmount').value = Math.abs(tx.amount); 
                     view.openForm('expense');
                 } else {
@@ -545,8 +534,6 @@
                     let derivedType = 'direct';
                     if (tx.category.includes('iFood')) derivedType = 'ifood';
                     if (tx.category.includes('Encomenda')) derivedType = 'order';
-                    if (tx.category.includes('Ticket')) derivedType = 'ticket'; // Adicionado verificação para ticket
-
                     document.getElementById('incType').value = derivedType;
                     view.handleIncomeTypeChange();
 
@@ -578,10 +565,9 @@
                 if (!dateVal) return alert('Data obrigatória');
 
                 if (app.editingId) {
-                    db.transactions = db.transactions.filter(t => t.id != app.editingId); // Correção !=
+                    db.transactions = db.transactions.filter(t => t.id != app.editingId);
                 }
 
-                // === LÓGICA DE VENDA BÁRBARA ===
                 if (isBarbara) {
                     const val = parseFloat(document.getElementById('incAmount').value);
                     if (isNaN(val)) return alert('Valor inválido');
@@ -617,7 +603,6 @@
                     return;
                 }
 
-                // === LÓGICA PADRÃO ===
                 let netForReserve = 0; 
 
                 if (type === 'ifood') {
@@ -630,8 +615,7 @@
                     if (origin === 'app') {
                         const rate = db.settings.ifoodRateApp / 100;
                         const net = gross - (gross * rate) - fixedFee;
-                        
-                        // ALTERAÇÃO: Definir como 0 para não cobrar os 7%
+                        // netForReserve permanece 0 para iFood conforme pedido
                         netForReserve = 0; 
 
                         const futureDate = new Date(dateVal);
@@ -653,9 +637,8 @@
                     } else {
                         const rate = db.settings.ifoodRateDelivery / 100;
                         const fee = (gross * rate) + fixedFee;
-                        
-                        // ALTERAÇÃO: Definir como 0 para não cobrar os 7%
-                        netForReserve = 0;
+                        // netForReserve permanece 0 para iFood conforme pedido
+                        netForReserve = 0; 
 
                         db.transactions.unshift({
                             id: app.editingId || Date.now() + '1',
@@ -688,7 +671,7 @@
 
                 } else if (type === 'order') {
                     const val = parseFloat(document.getElementById('incOrderDeposit').value) || parseFloat(document.getElementById('incAmount').value);
-                    netForReserve = val; // Encomenda mantém os 7%
+                    netForReserve = val;
                     db.transactions.unshift({
                         id: app.editingId || Date.now(),
                         date: dateVal,
@@ -701,28 +684,17 @@
                         target: 'caixa',
                         dueDate: dateVal
                     });
-                } else if (type === 'ticket') {
-                    // === ALTERAÇÃO: BLOCO NOVO PARA TICKET ALIMENTAÇÃO ===
-                    const val = parseFloat(document.getElementById('incAmount').value);
-                    netForReserve = 0; // Não deduz 7%
-                    if (isNaN(val)) return alert('Valor inválido');
-                    
-                    db.transactions.unshift({
-                        id: app.editingId || Date.now(),
-                        date: dateVal,
-                        type: 'income',
-                        category: 'Ticket Alimentação',
-                        description: desc,
-                        amount: val,
-                        status: 'paid',
-                        method: 'Ticket', // Salva método como Ticket
-                        target: 'caixa',
-                        dueDate: dateVal
-                    });
                 } else {
                     const val = parseFloat(document.getElementById('incAmount').value);
-                    netForReserve = val; // Venda normal mantém os 7%
                     if (isNaN(val)) return alert('Valor inválido');
+                    
+                    // Se for Ticket Alimentação, não deduz os 7%
+                    if (method === 'Ticket Alimentação') {
+                        netForReserve = 0;
+                    } else {
+                        netForReserve = val;
+                    }
+
                     db.transactions.unshift({
                         id: app.editingId || Date.now(),
                         date: dateVal,
@@ -737,7 +709,6 @@
                     });
                 }
 
-                // Só deduz o Cap. Giro se netForReserve for maior que 0
                 if (!app.editingId && netForReserve > 0) {
                     const reserveAmount = netForReserve * 0.07;
                     db.transactions.unshift({
@@ -767,18 +738,15 @@
                 let category = document.getElementById('expCategory').value;
 
                 if (app.editingId) {
-                    // Tenta manter o tipo original se for especial (Retenção ou Taxa)
                     const original = db.transactions.find(t => t.id == app.editingId);
                     if (original) {
                          type = original.type;
                          status = original.status;
-                         // Mantém o método original se for automático
                          if(type === 'adjustment' || type === 'reserve_out') method = original.method;
                     }
-                    db.transactions = db.transactions.filter(t => t.id != app.editingId); // Correção CRÍTICA: !=
+                    db.transactions = db.transactions.filter(t => t.id != app.editingId);
                 }
                 
-                // Se for ajuste (taxa), garante que o valor seja negativo
                 let finalAmount = val;
                 if (type === 'adjustment') {
                      finalAmount = -Math.abs(val); 
@@ -824,7 +792,6 @@
 
             deleteTransaction: (id) => {
                 if(confirm('Excluir este lançamento?')) {
-                    // Correção CRÍTICA: != permite apagar string e number
                     db.transactions = db.transactions.filter(t => t.id != id);
                     app.saveData();
                 }
@@ -951,7 +918,6 @@
                 let reserve = 0;
 
                 db.transactions.forEach(t => {
-                    // Cálculo do Saldo Disponível
                     if (t.status === 'paid') {
                         if (t.type === 'income') balance += t.amount;
                         else if (t.type === 'expense') balance -= t.amount;
