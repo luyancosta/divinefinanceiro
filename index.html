@@ -169,6 +169,7 @@
                     <option value="direct">Venda Direta / Balcão</option>
                     <option value="ifood">Venda iFood</option>
                     <option value="order">Encomenda</option>
+                    <option value="ticket">Ticket Alimentação (Entrada Pessoal)</option>
                 </select>
 
                 <div id="ifoodOptions" class="hidden-elm bg-orange-50 p-3 rounded mb-3 border border-orange-100">
@@ -442,9 +443,6 @@
                     .catch((error) => {
                         console.error(error);
                         let msg = "Erro ao entrar.";
-                        if(error.code === 'auth/invalid-login-credentials' || error.code === 'auth/wrong-password') msg = "E-mail ou senha incorretos.";
-                        if(error.code === 'auth/user-not-found') msg = "Usuário não encontrado.";
-                        
                         err.innerText = msg;
                         err.classList.remove('hidden-elm');
                         btn.innerText = "ENTRAR";
@@ -534,6 +532,7 @@
                     let derivedType = 'direct';
                     if (tx.category.includes('iFood')) derivedType = 'ifood';
                     if (tx.category.includes('Encomenda')) derivedType = 'order';
+                    if (tx.category.includes('Ticket')) derivedType = 'ticket';
                     document.getElementById('incType').value = derivedType;
                     view.handleIncomeTypeChange();
 
@@ -605,18 +604,18 @@
 
                 let netForReserve = 0; 
 
+                // CASO 1: IFOOD (Retirado 7%)
                 if (type === 'ifood') {
                     const gross = parseFloat(document.getElementById('incAmount').value);
                     const origin = document.getElementById('incIfoodPaymentOrigin').value; 
                     if (isNaN(gross)) return alert('Valor inválido');
 
                     const fixedFee = db.settings.ifoodFixed;
-                    
+                    netForReserve = 0; // iFood ignora 7% conforme solicitado
+
                     if (origin === 'app') {
                         const rate = db.settings.ifoodRateApp / 100;
                         const net = gross - (gross * rate) - fixedFee;
-                        // netForReserve permanece 0 para iFood conforme pedido
-                        netForReserve = 0; 
 
                         const futureDate = new Date(dateVal);
                         futureDate.setDate(futureDate.getDate() + db.settings.ifoodDelay);
@@ -637,8 +636,6 @@
                     } else {
                         const rate = db.settings.ifoodRateDelivery / 100;
                         const fee = (gross * rate) + fixedFee;
-                        // netForReserve permanece 0 para iFood conforme pedido
-                        netForReserve = 0; 
 
                         db.transactions.unshift({
                             id: app.editingId || Date.now() + '1',
@@ -669,6 +666,27 @@
                         }
                     }
 
+                // CASO 2: TICKET ALIMENTAÇÃO (Ignora 7% tanto no tipo quanto no método)
+                } else if (type === 'ticket' || method === 'Ticket Alimentação') {
+                    const val = parseFloat(document.getElementById('incAmount').value);
+                    if (isNaN(val)) return alert('Valor inválido');
+                    
+                    netForReserve = 0; // Ignora 7%
+
+                    db.transactions.unshift({
+                        id: app.editingId || Date.now(),
+                        date: dateVal,
+                        type: 'income',
+                        category: (type === 'ticket') ? 'Ticket Alimentação' : 'Venda Direta',
+                        description: desc,
+                        amount: val,
+                        status: 'paid',
+                        method: method,
+                        target: 'caixa',
+                        dueDate: dateVal
+                    });
+
+                // CASO 3: ENCOMENDA
                 } else if (type === 'order') {
                     const val = parseFloat(document.getElementById('incOrderDeposit').value) || parseFloat(document.getElementById('incAmount').value);
                     netForReserve = val;
@@ -684,16 +702,12 @@
                         target: 'caixa',
                         dueDate: dateVal
                     });
+
+                // CASO 4: VENDA DIRETA PADRÃO
                 } else {
                     const val = parseFloat(document.getElementById('incAmount').value);
                     if (isNaN(val)) return alert('Valor inválido');
-                    
-                    // Se for Ticket Alimentação, não deduz os 7%
-                    if (method === 'Ticket Alimentação') {
-                        netForReserve = 0;
-                    } else {
-                        netForReserve = val;
-                    }
+                    netForReserve = val;
 
                     db.transactions.unshift({
                         id: app.editingId || Date.now(),
@@ -709,6 +723,7 @@
                     });
                 }
 
+                // SE FOR UMA VENDA QUE COBRA RESERVA (MAIOR QUE 0)
                 if (!app.editingId && netForReserve > 0) {
                     const reserveAmount = netForReserve * 0.07;
                     db.transactions.unshift({
